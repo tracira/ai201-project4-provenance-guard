@@ -2,6 +2,7 @@ import json
 import os
 import re
 import sqlite3
+import statistics
 import uuid
 from datetime import datetime, timezone
 
@@ -122,6 +123,58 @@ def classify_with_llm(text: str) -> tuple[float, str | None]:
         return 0.5, None
 
 
+# ── Signal 2: Stylometric Heuristics ─────────────────────────────────────────
+
+def _sentence_length_score(text: str) -> float:
+    """Low CV (uniform lengths) → 1.0 (AI-like). High CV → 0.0 (human-like)."""
+    sentences = [s.strip() for s in re.split(r'[.!?]+', text) if s.strip()]
+    if len(sentences) < 2:
+        return 0.5
+    lengths = [len(s.split()) for s in sentences]
+    mean = statistics.mean(lengths)
+    if mean == 0:
+        return 0.5
+    cv = statistics.stdev(lengths) / mean
+    return max(0.0, min(1.0, 1.0 - (cv / 0.8)))
+
+
+def _ttr_score(text: str) -> float:
+    """Low TTR (less unique vocab) → 1.0 (AI-like). High TTR → 0.0 (human-like).
+    Suppressed for texts under 30 words (statistics unreliable)."""
+    words = re.findall(r'\b\w+\b', text.lower())
+    if len(words) < 30:
+        return 0.5
+    ttr = len(set(words)) / len(words)
+    return max(0.0, min(1.0, (0.65 - ttr) / 0.25))
+
+
+def _punctuation_score(text: str) -> float:
+    """Few expressive punctuation types → 1.0 (AI-like). Many types → 0.0 (human-like)."""
+    expressive = set('—–;…!?')
+    count = len({c for c in text if c in expressive})
+    return max(0.0, 1.0 - count / 3.0)
+
+
+def _word_length_score(text: str) -> float:
+    """Short avg word length → 0.0 (human-like). Long → 1.0 (AI-like)."""
+    words = re.findall(r'\b\w+\b', text)
+    if not words:
+        return 0.5
+    avg_len = sum(len(w) for w in words) / len(words)
+    return max(0.0, min(1.0, (avg_len - 4.0) / 2.0))
+
+
+def compute_stylo_score(text: str) -> float:
+    """Average of four normalized sub-signals (0 = human-like, 1 = AI-like)."""
+    sub_scores = [
+        _sentence_length_score(text),
+        _ttr_score(text),
+        _punctuation_score(text),
+        _word_length_score(text),
+    ]
+    return round(sum(sub_scores) / len(sub_scores), 4)
+
+
 # ── Confidence Scoring ────────────────────────────────────────────────────────
 
 _LLM_WEIGHT   = 0.65
@@ -187,7 +240,7 @@ def submit():
     else:
         llm_score, _ = classify_with_llm(content)
 
-    stylo_score  = 0.5  # placeholder — Signal 2 added in M4
+    stylo_score  = compute_stylo_score(content)
     final_score  = compute_final_score(llm_score, stylo_score)
     classification, confidence_level = classify(final_score)
     label_text   = generate_label(final_score)
@@ -215,7 +268,7 @@ def submit():
         "label_text":       label_text,
         "signals": {
             "llm_score":   round(llm_score, 4),
-            "stylo_score": stylo_score,
+            "stylo_score": round(stylo_score, 4),
         },
         "short_text_warning": short_text,
         "status":             "classified",
