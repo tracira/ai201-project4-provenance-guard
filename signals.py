@@ -71,12 +71,15 @@ def _sentence_length_score(text: str) -> float:
 
 def _ttr_score(text: str) -> float:
     """Low TTR (less unique vocab) → 1.0 (AI-like). High TTR → 0.0 (human-like).
-    Suppressed for texts under 30 words."""
+    Suppressed for texts under 80 words — short passages have naturally high TTR
+    regardless of authorship, making the signal uninformative below this threshold."""
     words = re.findall(r'\b\w+\b', text.lower())
-    if len(words) < 30:
+    if len(words) < 80:
         return 0.5
     ttr = len(set(words)) / len(words)
-    return max(0.0, min(1.0, (0.65 - ttr) / 0.25))
+    # Calibrated to realistic TTR ranges for 80-300 word passages:
+    # AI prose typically 0.55-0.70, human prose 0.65-0.85
+    return max(0.0, min(1.0, (0.72 - ttr) / 0.30))
 
 
 def _punctuation_score(text: str) -> float:

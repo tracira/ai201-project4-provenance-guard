@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 load_dotenv()  # must run before signals.py initializes the Groq client
 
 from flask import Flask, jsonify, request
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 from database import get_entry, init_db, log_submission, read_log
 from scoring import classify, compute_final_score, generate_label
@@ -14,8 +16,16 @@ from signals import classify_with_llm, compute_stylo_score
 app = Flask(__name__)
 init_db()
 
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=[],
+    storage_uri="memory://",
+)
+
 
 @app.route("/submit", methods=["POST"])
+@limiter.limit("5 per minute;50 per hour")
 def submit():
     data = request.get_json(silent=True)
     if not data:
