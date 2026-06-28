@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()  # must run before signals.py initializes the Groq client
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
@@ -22,6 +22,11 @@ limiter = Limiter(
     default_limits=[],
     storage_uri="memory://",
 )
+
+
+@app.route("/")
+def index():
+    return render_template("index.html")
 
 
 @app.route("/submit", methods=["POST"])

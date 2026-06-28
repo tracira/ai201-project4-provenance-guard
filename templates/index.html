@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Provenance Guard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+      color: #1a1a1a;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #fff;
+      border-bottom: 1px solid #e5e5e5;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header h1 { font-size: 18px; font-weight: 600; }
+    header span { font-size: 13px; color: #888; }
+
+    .tabs {
+      display: flex;
+      gap: 0;
+      background: #fff;
+      border-bottom: 1px solid #e5e5e5;
+      padding: 0 32px;
+    }
+    .tab {
+      padding: 12px 20px;
+      font-size: 14px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      color: #666;
+      user-select: none;
+    }
+    .tab.active { color: #1a1a1a; border-bottom-color: #1a1a1a; font-weight: 500; }
+
+    .page { display: none; padding: 32px; max-width: 760px; margin: 0 auto; }
+    .page.active { display: block; }
+
+    /* Submit page */
+    label { font-size: 13px; font-weight: 500; display: block; margin-bottom: 6px; }
+    textarea {
+      width: 100%;
+      height: 180px;
+      border: 1px solid #d5d5d5;
+      border-radius: 6px;
+      padding: 12px;
+      font-size: 14px;
+      font-family: inherit;
+      resize: vertical;
+      background: #fff;
+      outline: none;
+      transition: border-color .15s;
+    }
+    textarea:focus { border-color: #1a1a1a; }
+
+    .row { display: flex; gap: 12px; margin-top: 12px; align-items: flex-end; }
+    input[type="text"] {
+      flex: 1;
+      border: 1px solid #d5d5d5;
+      border-radius: 6px;
+      padding: 9px 12px;
+      font-size: 14px;
+      font-family: inherit;
+      background: #fff;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input[type="text"]:focus { border-color: #1a1a1a; }
+
+    button {
+      padding: 9px 20px;
+      background: #1a1a1a;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background .15s;
+      white-space: nowrap;
+    }
+    button:hover { background: #333; }
+    button:disabled { background: #ccc; cursor: default; }
+    button.secondary {
+      background: #fff;
+      color: #1a1a1a;
+      border: 1px solid #d5d5d5;
+    }
+    button.secondary:hover { background: #f5f5f5; }
+
+    /* Result card */
+    #result { margin-top: 24px; display: none; }
+
+    .card {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 12px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: .3px;
+    }
+    .badge-ai       { background: #fef2f2; color: #dc2626; }
+    .badge-human    { background: #f0fdf4; color: #16a34a; }
+    .badge-uncertain{ background: #fffbeb; color: #d97706; }
+
+    .result-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .result-header .score {
+      font-size: 13px;
+      color: #666;
+    }
+    .confidence-tag {
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #f0f0f0;
+      color: #555;
+    }
+
+    .label-text {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #444;
+      border-left: 3px solid #e5e5e5;
+      padding-left: 14px;
+      margin-bottom: 16px;
+    }
+
+    .signals {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+    }
+    .signal-item label {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 6px;
+      font-weight: 400;
+    }
+    .signal-item .val {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .bar-track {
+      height: 4px;
+      background: #eee;
+      border-radius: 2px;
+      margin-top: 6px;
+    }
+    .bar-fill {
+      height: 4px;
+      border-radius: 2px;
+      background: #1a1a1a;
+      transition: width .4s ease;
+    }
+
+    .warn {
+      font-size: 12px;
+      color: #d97706;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-radius: 4px;
+      padding: 6px 10px;
+      margin-top: 10px;
+    }
+
+    /* Appeal section */
+    #appeal-section {
+      display: none;
+    }
+    #appeal-section textarea { height: 100px; margin-top: 0; }
+    #appeal-msg {
+      font-size: 13px;
+      margin-top: 10px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      display: none;
+    }
+    #appeal-msg.ok  { background: #f0fdf4; color: #16a34a; }
+    #appeal-msg.err { background: #fef2f2; color: #dc2626; }
+
+    /* Log page */
+    #log-list { display: flex; flex-direction: column; gap: 12px; }
+
+    .log-entry {
+      background: #fff;
+      border: 1px solid #e5e5e5;
+      border-radius: 8px;
+      padding: 16px 20px;
+    }
+    .log-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .log-meta .ts { font-size: 12px; color: #999; margin-left: auto; }
+    .log-preview {
+      font-size: 13px;
+      color: #555;
+      margin-bottom: 10px;
+      line-height: 1.5;
+    }
+    .log-scores {
+      display: flex;
+      gap: 20px;
+      font-size: 12px;
+      color: #888;
+      flex-wrap: wrap;
+    }
+    .log-scores span b { color: #444; }
+    .appeal-pill {
+      font-size: 11px;
+      background: #eff6ff;
+      color: #2563eb;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .appeal-text {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #555;
+      background: #f8f8f8;
+      border-radius: 4px;
+      padding: 8px 12px;
+      border-left: 3px solid #2563eb;
+    }
+
+    .empty { text-align: center; color: #aaa; font-size: 14px; padding: 48px 0; }
+
+    .log-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .log-controls h2 { font-size: 15px; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Provenance Guard</h1>
+  <span>AI vs Human Text Classifier</span>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('submit')">Submit Text</div>
+  <div class="tab" onclick="switchTab('log')">Audit Log</div>
+</div>
+
+<!-- Submit page -->
+<div class="page active" id="page-submit">
+  <label for="content">Text to classify</label>
+  <textarea id="content" placeholder="Paste any text here — an essay, a story, a blog post, a poem…"></textarea>
+
+  <div class="row">
+    <div style="flex:1">
+      <label for="creator_id" style="margin-top:0">Creator ID <span style="font-weight:400;color:#aaa">(optional)</span></label>
+      <input type="text" id="creator_id" placeholder="e.g. user_123">
+    </div>
+    <button id="submit-btn" onclick="submitText()">Classify</button>
+  </div>
+
+  <div id="result">
+    <div class="card">
+      <div class="result-header">
+        <span id="badge" class="badge"></span>
+        <span class="confidence-tag" id="confidence-tag"></span>
+        <span class="score" id="score-display"></span>
+      </div>
+
+      <div class="label-text" id="label-text"></div>
+
+      <div class="signals">
+        <div class="signal-item">
+          <label>LLM Score</label>
+          <div class="val" id="llm-val"></div>
+          <div class="bar-track"><div class="bar-fill" id="llm-bar"></div></div>
+        </div>
+        <div class="signal-item">
+          <label>Stylometric Score</label>
+          <div class="val" id="stylo-val"></div>
+          <div class="bar-track"><div class="bar-fill" id="stylo-bar"></div></div>
+        </div>
+        <div class="signal-item">
+          <label>Final Score</label>
+          <div class="val" id="final-val"></div>
+          <div class="bar-track"><div class="bar-fill" id="final-bar"></div></div>
+        </div>
+      </div>
+
+      <div id="short-warn" class="warn" style="display:none">
+        Short text warning: fewer than 10 words — scores are less reliable.
+      </div>
+      <div id="appeal-status-banner" style="display:none;margin-top:12px;font-size:13px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:6px;padding:8px 12px;">
+        Appeal submitted — this content is now <b>under review</b>. You can see it in the Audit Log.
+      </div>
+    </div>
+
+    <!-- Appeal section -->
+    <div id="appeal-section" class="card">
+      <label style="margin-bottom:10px">Submit an Appeal</label>
+      <textarea id="appeal-text" placeholder="Explain why you believe this classification is incorrect…"></textarea>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button onclick="submitAppeal()">Submit Appeal</button>
+        <button class="secondary" onclick="hideAppeal()">Cancel</button>
+      </div>
+      <div id="appeal-msg"></div>
+    </div>
+
+    <div style="text-align:right">
+      <button class="secondary" id="appeal-btn" onclick="showAppeal()">Appeal this classification</button>
+    </div>
+  </div>
+</div>
+
+<!-- Log page -->
+<div class="page" id="page-log">
+  <div class="log-controls">
+    <h2>Audit Log</h2>
+    <button onclick="loadLog()">Refresh</button>
+  </div>
+  <div id="log-list"><div class="empty">Loading…</div></div>
+</div>
+
+<script>
+  let currentContentId = null;
+
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach((t, i) => {
+      t.classList.toggle('active', ['submit','log'][i] === name);
+    });
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('page-' + name).classList.add('active');
+    if (name === 'log') loadLog();
+  }
+
+  async function submitText() {
+    const content = document.getElementById('content').value.trim();
+    if (!content) return;
+
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.textContent = 'Classifying…';
+
+    try {
+      const res = await fetch('/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content,
+          creator_id: document.getElementById('creator_id').value.trim() || undefined
+        })
+      });
+
+      if (res.status === 429) {
+        alert('Rate limit reached. Please wait before submitting again.');
+        return;
+      }
+
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Error'); return; }
+
+      showResult(data);
+      currentContentId = data.content_id;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Classify';
+    }
+  }
+
+  function showResult(data) {
+    const cls = data.classification;
+    const badge = document.getElementById('badge');
+    badge.textContent = cls === 'ai_generated' ? 'AI-Generated' : cls === 'human' ? 'Human' : 'Uncertain';
+    badge.className = 'badge ' + (cls === 'ai_generated' ? 'badge-ai' : cls === 'human' ? 'badge-human' : 'badge-uncertain');
+
+    document.getElementById('confidence-tag').textContent =
+      data.confidence_level === 'high' ? 'High confidence' : 'Low confidence';
+    document.getElementById('score-display').textContent =
+      'Score: ' + data.confidence_score.toFixed(4);
+
+    document.getElementById('label-text').textContent = data.label_text;
+
+    const llm = data.signals.llm_score;
+    const stylo = data.signals.stylo_score;
+    const final = data.confidence_score;
+
+    document.getElementById('llm-val').textContent = llm.toFixed(4);
+    document.getElementById('stylo-val').textContent = stylo.toFixed(4);
+    document.getElementById('final-val').textContent = final.toFixed(4);
+    document.getElementById('llm-bar').style.width = (llm * 100) + '%';
+    document.getElementById('stylo-bar').style.width = (stylo * 100) + '%';
+    document.getElementById('final-bar').style.width = (final * 100) + '%';
+
+    document.getElementById('short-warn').style.display = data.short_text_warning ? 'block' : 'none';
+
+    document.getElementById('result').style.display = 'block';
+    document.getElementById('appeal-section').style.display = 'none';
+    document.getElementById('appeal-btn').style.display = 'inline-block';
+    document.getElementById('appeal-msg').style.display = 'none';
+    document.getElementById('appeal-text').value = '';
+    document.getElementById('appeal-text').disabled = false;
+    document.querySelector('#appeal-section button').disabled = false;
+    document.getElementById('appeal-status-banner').style.display = 'none';
+  }
+
+  function showAppeal() {
+    document.getElementById('appeal-section').style.display = 'block';
+    document.getElementById('appeal-btn').style.display = 'none';
+  }
+
+  function hideAppeal() {
+    document.getElementById('appeal-section').style.display = 'none';
+    document.getElementById('appeal-btn').style.display = 'inline-block';
+  }
+
+  async function submitAppeal() {
+    const reasoning = document.getElementById('appeal-text').value.trim();
+    if (!reasoning) return;
+
+    const res = await fetch('/appeal/' + currentContentId, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reasoning })
+    });
+
+    const data = await res.json();
+    const msg = document.getElementById('appeal-msg');
+    msg.style.display = 'block';
+
+    if (res.ok) {
+      document.getElementById('appeal-section').style.display = 'none';
+      document.getElementById('appeal-btn').style.display = 'none';
+      const statusBanner = document.getElementById('appeal-status-banner');
+      statusBanner.style.display = 'block';
+    } else {
+      msg.className = 'err';
+      msg.style.display = 'block';
+      msg.textContent = data.error || 'Failed to submit appeal.';
+    }
+  }
+
+  async function loadLog() {
+    const list = document.getElementById('log-list');
+    list.innerHTML = '<div class="empty">Loading…</div>';
+
+    const res = await fetch('/log?limit=20');
+    const data = await res.json();
+
+    if (!data.entries || data.entries.length === 0) {
+      list.innerHTML = '<div class="empty">No entries yet.</div>';
+      return;
+    }
+
+    list.innerHTML = data.entries.map(e => {
+      const cls = e.classification;
+      const badgeCls = cls === 'ai_generated' ? 'badge-ai' : cls === 'human' ? 'badge-human' : 'badge-uncertain';
+      const badgeLabel = cls === 'ai_generated' ? 'AI-Generated' : cls === 'human' ? 'Human' : 'Uncertain';
+      const ts = new Date(e.timestamp).toLocaleString();
+      const appealHtml = e.appeal_reasoning
+        ? `<span class="appeal-pill">Under Review</span>
+           <div class="appeal-text"><b>Appeal:</b> ${esc(e.appeal_reasoning)}</div>`
+        : '';
+      return `
+        <div class="log-entry">
+          <div class="log-meta">
+            <span class="badge ${badgeCls}">${badgeLabel}</span>
+            <span style="font-size:12px;color:#888">${e.confidence_level === 'high' ? 'High confidence' : 'Low confidence'}</span>
+            ${e.appeal_reasoning ? '<span class="appeal-pill">Under Review</span>' : ''}
+            <span class="ts">${ts}</span>
+          </div>
+          <div class="log-preview">${esc(e.content_preview)}${e.content_preview && e.content_preview.length >= 200 ? '…' : ''}</div>
+          <div class="log-scores">
+            <span>LLM <b>${e.llm_score?.toFixed(4)}</b></span>
+            <span>Stylometric <b>${e.stylo_score?.toFixed(4)}</b></span>
+            <span>Final <b>${e.final_score?.toFixed(4)}</b></span>
+          </div>
+          ${e.appeal_reasoning ? `<div class="appeal-text"><b>Appeal:</b> ${esc(e.appeal_reasoning)}</div>` : ''}
+        </div>`;
+    }).join('');
+  }
+
+  function esc(s) {
+    if (!s) return '';
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+
+</body>
+</html>
