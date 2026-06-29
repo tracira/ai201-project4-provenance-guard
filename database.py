@@ -15,6 +15,7 @@ def init_db():
                 content_preview  TEXT,
                 llm_score        REAL,
                 stylo_score      REAL,
+                formality_score  REAL,
                 final_score      REAL,
                 classification   TEXT,
                 confidence_level TEXT,
@@ -25,6 +26,11 @@ def init_db():
                 appeal_timestamp TEXT
             )
         """)
+        # migration: add formality_score to existing databases
+        try:
+            conn.execute("ALTER TABLE audit_log ADD COLUMN formality_score REAL")
+        except sqlite3.OperationalError:
+            pass
 
 
 def log_submission(record: dict):
@@ -33,11 +39,11 @@ def log_submission(record: dict):
             """
             INSERT INTO audit_log
                 (content_id, creator_id, timestamp, content_preview,
-                 llm_score, stylo_score, final_score, classification,
+                 llm_score, stylo_score, formality_score, final_score, classification,
                  confidence_level, label_text, short_text_flag, status)
             VALUES
                 (:content_id, :creator_id, :timestamp, :content_preview,
-                 :llm_score, :stylo_score, :final_score, :classification,
+                 :llm_score, :stylo_score, :formality_score, :final_score, :classification,
                  :confidence_level, :label_text, :short_text_flag, :status)
             """,
             record,
@@ -65,10 +71,16 @@ def get_entry(content_id: str) -> dict | None:
     return dict(row) if row else None
 
 
-def read_log(limit: int = 20) -> list[dict]:
+def read_log(limit: int = 20, creator_id: str | None = None) -> list[dict]:
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)
-        ).fetchall()
+        if creator_id is not None:
+            rows = conn.execute(
+                "SELECT * FROM audit_log WHERE creator_id = ? ORDER BY id DESC LIMIT ?",
+                (creator_id, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
     return [dict(row) for row in rows]

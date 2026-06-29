@@ -226,17 +226,52 @@ def compute_stylo_score(text):
 
 ---
 
+#### Signal 3: Formality / Register
+
+**What it measures:** the density of informal language markers — contractions ("won't", "I'd", "can't") and colloquial tokens ("gonna", "kinda", "yeah") — as a fraction of total words. AI models default to a formal written register and almost never produce contractions unless explicitly prompted to. Human writing, especially casual and personal work, uses them naturally.
+
+**Implementation:**
+
+```python
+_CONTRACTIONS_RE = re.compile(
+    r"\b(I'm|I've|I'd|I'll|you're|...|can't|won't|don't|\w+n't)\b",
+    re.IGNORECASE,
+)
+_INFORMAL_WORDS = {'gonna', 'wanna', 'kinda', 'sorta', 'gotta', 'lemme',
+                   'dunno', 'ya', 'yep', 'nope', 'okay', 'yeah', 'hmm', 'ugh'}
+
+def compute_formality_score(text):
+    words = re.findall(r"\b\w+\b", text.lower())
+    if not words:
+        return 0.5
+    contraction_count = len(_CONTRACTIONS_RE.findall(text))
+    informal_count = sum(1 for w in words if w in _INFORMAL_WORDS)
+    informal_ratio = (contraction_count + informal_count) / len(words)
+    # 0% informal → 1.0 (AI-like, maximally formal)
+    # 2%+ informal → 0.0 (human-like, casual register)
+    return max(0.0, min(1.0, 1.0 - informal_ratio / 0.02))
+```
+
+**Blind spots:**
+- Formal human writing (academic essays, literary fiction, legal briefs) uses few contractions and will score as AI-like on this signal alone. The LLM and stylometric signals provide the counter-weight.
+- AI text explicitly prompted to write informally ("sound casual") will suppress this signal. However, most platform-submitted AI content is not deliberately style-prompted.
+
+---
+
 #### Combining Signals into `final_score`
 
 ```python
-LLM_WEIGHT   = 0.65
-STYLO_WEIGHT = 0.35
+LLM_WEIGHT       = 0.60
+STYLO_WEIGHT     = 0.25
+FORMALITY_WEIGHT = 0.15
 
-def compute_final_score(llm_score, stylo_score):
-    return LLM_WEIGHT * llm_score + STYLO_WEIGHT * stylo_score
+def compute_final_score(llm_score, stylo_score, formality_score):
+    return LLM_WEIGHT * llm_score + STYLO_WEIGHT * stylo_score + FORMALITY_WEIGHT * formality_score
 ```
 
-**Rationale for 0.65/0.35:** the LLM signal captures semantic and holistic properties (voice, naturalness, coherence) that surface statistics cannot. Stylometrics is a useful corroborating signal but is more easily fooled by text type. The LLM signal is also more robust for very short texts where statistics are unreliable. The 0.35 weight on stylometrics is enough to meaningfully shift the score when the signals agree but not enough to override the LLM when they disagree.
+**Rationale for 0.60/0.25/0.15:** the LLM signal retains the largest weight because it captures holistic semantic properties that surface statistics cannot. The stylometric signal (0.25) corroborates with statistical surface properties — meaningful when the signals agree, not strong enough to override the LLM alone. The formality signal (0.15) is a clean register detector that is near-perfect on typical platform content but degrades on formally written human prose, so it receives the smallest weight.
+
+**Conflict resolution:** the weighted average naturally handles inter-signal disagreement. If the LLM disagrees with both heuristic signals (e.g. LLM says AI at 0.8, both heuristics say human at 0.2), the result is 0.60×0.8 + 0.25×0.2 + 0.15×0.2 = 0.56 — landing in the uncertain band rather than committing to either label. When all three signals agree, the combined weight pushes the result well outside the uncertain band.
 
 ---
 
@@ -546,27 +581,4 @@ Every `POST /submit` inserts one row. `POST /appeal/<content_id>` updates the ex
 4. Send 6 rapid `POST /submit` requests in under a minute. Confirm the 6th returns `429`.
 5. Confirm `GET /log?limit=3` returns at most 3 entries.
 
----
 
-## Milestone Checklist
-
-### Milestone 1
-- [x] Architecture narrative written
-- [x] Two detection signals chosen with blind spots documented
-- [x] False positive scenario traced end-to-end
-- [x] API surface sketched (all endpoints, request/response shapes)
-- [x] Submission flow diagram
-- [x] Appeal flow diagram
-- [x] Transparency label variants written out
-- [x] Rate limit values chosen with reasoning
-- [x] Audit log schema defined
-- [x] Confidence scoring formula and threshold rationale documented
-
-### Milestone 2
-- [x] Signal outputs specified exactly (prompt format, parse logic, sub-signal formulas)
-- [x] Uncertainty representation: what 0.6 means, threshold table, calibration test plan
-- [x] Three label variants written as verbatim strings
-- [x] Appeals workflow: who appeals, what info, status transitions, reviewer view, error cases
-- [x] Two specific anticipated edge cases (anaphoric poetry, very short texts) + one bonus (non-English)
-- [x] Architecture section includes diagram from M1
-- [x] AI Tool Plan covers M3, M4, M5 with specific sections, prompts, and verification steps

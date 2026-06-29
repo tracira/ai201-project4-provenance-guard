@@ -11,7 +11,7 @@ from flask_limiter.util import get_remote_address
 
 from database import get_entry, init_db, log_submission, read_log
 from scoring import classify, compute_final_score, generate_label
-from signals import classify_with_llm, compute_stylo_score
+from signals import classify_with_llm, compute_formality_score, compute_stylo_score
 
 app = Flask(__name__)
 init_db()
@@ -44,9 +44,10 @@ def submit():
     content_id = str(uuid.uuid4())
     short_text = len(content.split()) < 10
 
-    llm_score   = 0.5 if short_text else classify_with_llm(content)[0]
-    stylo_score = compute_stylo_score(content)
-    final_score = compute_final_score(llm_score, stylo_score)
+    llm_score      = 0.5 if short_text else classify_with_llm(content)[0]
+    stylo_score    = compute_stylo_score(content)
+    formality_score = compute_formality_score(content)
+    final_score    = compute_final_score(llm_score, stylo_score, formality_score)
     classification, confidence_level = classify(final_score)
     label_text  = generate_label(final_score)
 
@@ -57,6 +58,7 @@ def submit():
         "content_preview":  content[:200],
         "llm_score":        llm_score,
         "stylo_score":      stylo_score,
+        "formality_score":  formality_score,
         "final_score":      round(final_score, 4),
         "classification":   classification,
         "confidence_level": confidence_level,
@@ -72,8 +74,9 @@ def submit():
         "confidence_level": confidence_level,
         "label_text":       label_text,
         "signals": {
-            "llm_score":   round(llm_score, 4),
-            "stylo_score": round(stylo_score, 4),
+            "llm_score":       round(llm_score, 4),
+            "stylo_score":     round(stylo_score, 4),
+            "formality_score": round(formality_score, 4),
         },
         "short_text_warning": short_text,
         "status":             "classified",
@@ -110,7 +113,8 @@ def view_log():
         limit = max(1, min(int(request.args.get("limit", 20)), 100))
     except ValueError:
         limit = 20
-    entries = read_log(limit)
+    creator_id = request.args.get("creator_id") or None
+    entries = read_log(limit, creator_id=creator_id)
     return jsonify({"entries": entries, "total": len(entries)})
 
 

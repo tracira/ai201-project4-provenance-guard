@@ -1,9 +1,10 @@
-_LLM_WEIGHT   = 0.65
-_STYLO_WEIGHT = 0.35
+_LLM_WEIGHT       = 0.60
+_STYLO_WEIGHT     = 0.25
+_FORMALITY_WEIGHT = 0.15
 
 
-def compute_final_score(llm_score: float, stylo_score: float) -> float:
-    return _LLM_WEIGHT * llm_score + _STYLO_WEIGHT * stylo_score
+def compute_final_score(llm_score: float, stylo_score: float, formality_score: float) -> float:
+    return _LLM_WEIGHT * llm_score + _STYLO_WEIGHT * stylo_score + _FORMALITY_WEIGHT * formality_score
 
 
 def classify(final_score: float) -> tuple[str, str]:

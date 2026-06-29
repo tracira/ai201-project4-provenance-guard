@@ -64,15 +64,32 @@ Each sub-signal is normalized to [0, 1] and averaged into `stylo_score`.
 
 ---
 
+### Signal 3: Formality / Register (pure Python)
+
+**What it measures:** the density of informal language markers — contractions ("won't", "I'd", "can't") and colloquial tokens ("gonna", "kinda", "yeah") — as a fraction of total words. AI models default to a formal written register and almost never produce contractions unless explicitly prompted to. Human writing, especially casual and personal work, uses them naturally.
+
+**How it works:** a regex matches contractions and a fixed set of informal tokens. The ratio of informal tokens to total words is mapped to a [0, 1] score: 0% informal → 1.0 (AI-like, maximally formal), 2%+ informal → 0.0 (human-like, casual register). The 2% threshold is calibrated to typical human prose — most informal human texts carry at least one contraction per 50 words.
+
+**What it misses:**
+- Formal human writing (legal briefs, academic essays, literary fiction) uses few or no contractions and will score as AI-like on this signal alone. The LLM and stylometric signals provide the necessary counter-weight.
+- AI text prompted to sound casual ("write informally") will suppress this signal. However, most platform-submitted AI content is not deliberately style-prompted.
+
+---
+
 ## Confidence Scoring
 
-**Combination formula:**
+**Combination formula (3-signal ensemble):**
 
 ```
-final_score = 0.65 × llm_score + 0.35 × stylo_score
+final_score = 0.60 × llm_score + 0.25 × stylo_score + 0.15 × formality_score
 ```
 
-The LLM signal carries more weight (0.65) because it captures holistic semantic properties that surface statistics cannot — voice, naturalness, coherence. The stylometric signal (0.35) provides meaningful corroboration when the signals agree, but doesn't override the LLM when they disagree.
+**Weight rationale:**
+- **LLM (0.60):** captures holistic semantic properties — voice, naturalness, coherence — that surface statistics cannot. Retains the largest weight because it is the most robust signal across content types.
+- **Stylometric (0.25):** corroborates the LLM with statistical surface properties. Meaningful when the signals agree; not strong enough to override the LLM alone.
+- **Formality (0.15):** a clean binary-like signal for register. Near-perfect on typical platform content (AI rarely produces contractions unprompted) but degrades on formally written human prose, so it receives the smallest weight.
+
+**Conflict resolution:** the weighted average naturally resolves inter-signal disagreement. If the LLM disagrees with both heuristic signals (e.g., LLM says AI at 0.8, both heuristics say human at 0.2), the LLM's 0.60 weight pulls the result toward the uncertain band (0.60×0.8 + 0.25×0.2 + 0.15×0.2 = 0.56) rather than committing to either label. When all three signals agree, the combined weight produces high-confidence results well outside the uncertain band.
 
 **Thresholds:**
 
@@ -90,23 +107,55 @@ The uncertain band is intentionally wide (30 points). A false positive — label
 ```json
 {
   "classification": "ai_generated",
-  "confidence_score": 0.7533,
+  "confidence_score": 0.819,
   "confidence_level": "high",
-  "signals": { "llm_score": 0.8, "stylo_score": 0.6665 }
+  "signals": { "llm_score": 0.8, "stylo_score": 0.755, "formality_score": 1.0 }
 }
 ```
-Both signals agree strongly. The LLM detects the "covering all bases" structure and formal completeness; stylometrics catches the uniform sentence lengths and formal vocabulary.
+All three signals agree strongly. The LLM detects the "covering all bases" structure; stylometrics catches uniform sentence lengths and formal vocabulary; formality detects zero contractions.
 
-*High-confidence human text* — an informal personal anecdote about a broken sink:
+*High-confidence human text* — an informal personal anecdote:
 ```json
 {
   "classification": "human",
-  "confidence_score": 0.1539,
+  "confidence_score": 0.224,
   "confidence_level": "high",
-  "signals": { "llm_score": 0.1, "stylo_score": 0.254 }
+  "signals": { "llm_score": 0.2, "stylo_score": 0.350, "formality_score": 0.107 }
 }
 ```
-Both signals agree. The LLM detects the idiosyncratic voice and informal register; stylometrics catches the sentence length variation and expressive punctuation.
+All three signals agree. The LLM detects the idiosyncratic voice; stylometrics catches sentence length variation; formality detects contractions and informal tokens.
+
+---
+
+## Calibration Reference Set
+
+5 known-human texts and 5 known-AI texts submitted to verify that the scoring distributions are meaningfully separated. Expected: AI texts cluster above 0.65, human texts cluster below 0.35.
+
+**Known-human texts**
+
+| Text | llm_score | stylo_score | formality_score | final_score | result |
+|------|-----------|-------------|-----------------|-------------|--------|
+| Informal personal anecdote (ramen rant) | 0.200 | 0.350 | 0.107 | 0.224 | human / high |
+| Journal entry with self-correction | 0.100 | 0.385 | 0.091 | 0.170 | human / high |
+| Personal essay fragment with em-dashes | 0.200 | 0.263 | 0.000 | 0.186 | human / high |
+| Opinionated blog-style rant | 0.200 | 0.359 | 0.000 | 0.210 | human / high |
+| Memoir-style observation | 0.200 | 0.388 | 0.206 | 0.248 | human / high |
+
+Human average `final_score`: **0.207** (range 0.170–0.248)
+
+**Known-AI texts**
+
+| Text | llm_score | stylo_score | formality_score | final_score | result |
+|------|-----------|-------------|-----------------|-------------|--------|
+| Corporate transformation paragraph | 0.800 | 0.755 | 1.000 | 0.819 | ai_generated / high |
+| Educational overview with enumeration | 0.800 | 0.807 | 1.000 | 0.832 | ai_generated / high |
+| Structured benefits essay | 0.800 | 0.817 | 1.000 | 0.834 | ai_generated / high |
+| Comprehensive guide introduction | 0.800 | 0.680 | 1.000 | 0.800 | ai_generated / high |
+| Balanced analysis paragraph | 0.800 | 0.794 | 1.000 | 0.829 | ai_generated / high |
+
+AI average `final_score`: **0.823** (range 0.800–0.834)
+
+**Interpretation:** the two distributions do not overlap — the highest human score (0.248) is well below the lowest AI score (0.800), with a gap of ~0.55. All three signals agree in every case: the LLM signal cleanly separates at 0.1–0.2 vs 0.8, stylometrics corroborate at 0.26–0.39 vs 0.68–0.82, and formality is near-zero for all human texts vs 1.0 for all AI texts. The ensemble scoring is meaningful across this reference set.
 
 ---
 

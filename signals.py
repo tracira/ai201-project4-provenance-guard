@@ -107,3 +107,37 @@ def compute_stylo_score(text: str) -> float:
         _word_length_score(text),
     ]
     return round(sum(sub_scores) / len(sub_scores), 4)
+
+
+# ── Signal 3: Formality / Register ───────────────────────────────────────────
+
+_CONTRACTIONS_RE = re.compile(
+    r"\b(I'm|I've|I'd|I'll|you're|you've|you'd|you'll|"
+    r"he's|she's|it's|we're|we've|we'd|we'll|they're|they've|they'd|they'll|"
+    r"that's|there's|here's|what's|who's|can't|won't|don't|didn't|doesn't|"
+    r"isn't|aren't|wasn't|weren't|hasn't|haven't|hadn't|wouldn't|couldn't|"
+    r"shouldn't|mustn't|shan't|\w+n't)\b",
+    re.IGNORECASE,
+)
+
+_INFORMAL_WORDS = {
+    'gonna', 'wanna', 'kinda', 'sorta', 'gotta', 'lemme',
+    'dunno', 'ya', 'yep', 'nope', 'okay', 'yeah', 'hmm', 'ugh',
+}
+
+
+def compute_formality_score(text: str) -> float:
+    """Signal 3: register-based formality detector (0 = human-like, 1 = AI-like).
+
+    AI-generated text almost never uses contractions or informal tokens.
+    Measures the ratio of contractions + informal words to total words.
+    0% informal → formal/AI-like → 1.0
+    2%+ informal → casual/human-like → 0.0
+    """
+    words = re.findall(r"\b\w+\b", text.lower())
+    if not words:
+        return 0.5
+    contraction_count = len(_CONTRACTIONS_RE.findall(text))
+    informal_count = sum(1 for w in words if w in _INFORMAL_WORDS)
+    informal_ratio = (contraction_count + informal_count) / len(words)
+    return round(max(0.0, min(1.0, 1.0 - informal_ratio / 0.02)), 4)
