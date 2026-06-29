@@ -1,6 +1,6 @@
 # Provenance Guard
 
-A Flask API that classifies submitted text as human-written or AI-generated using a two-signal detection pipeline. Returns a structured classification, confidence score, and plain-language transparency label. Supports appeals and maintains a full audit log.
+A Flask API that classifies submitted text as human-written or AI-generated using a three-signal ensemble detection pipeline. Returns a structured classification, confidence score, and plain-language transparency label. Supports appeals and maintains a full audit log.
 
 ---
 
@@ -16,6 +16,110 @@ echo "GROQ_API_KEY=your_key_here" > .env
 # 3. Start the server
 python app.py
 # → Serving on http://127.0.0.1:5001
+```
+
+---
+
+## Demo
+
+All scenarios below were verified against a live server (`python app.py`).
+
+### POST /submit — high-confidence AI
+
+```
+POST /submit  {"content": "Artificial intelligence represents a transformative paradigm shift..."}
+```
+```json
+{
+    "classification": "ai_generated",
+    "confidence_level": "high",
+    "confidence_score": 0.8125,
+    "content_id": "05379789-ebcd-4ec1-9ee5-ea6839606e06",
+    "label_text": "Our automated analysis found strong signals that this content may be AI-generated. This is not a definitive finding — our system can be wrong, especially for polished or formally written human work. If you are the creator and believe this assessment is incorrect, you can submit an appeal.",
+    "signals": { "llm_score": 0.8, "stylo_score": 0.7298, "formality_score": 1.0 },
+    "status": "classified",
+    "appeal_url": "/appeal/05379789-ebcd-4ec1-9ee5-ea6839606e06"
+}
+```
+
+### POST /submit — high-confidence human
+
+```
+POST /submit  {"content": "ok so i finally tried that new ramen place downtown and honestly?..."}
+```
+```json
+{
+    "classification": "human",
+    "confidence_level": "high",
+    "confidence_score": 0.2237,
+    "content_id": "9dd3c745-c2b4-40aa-b3cc-b769b9135507",
+    "label_text": "Our automated analysis found strong signals that this content was written by a human. This assessment is based on stylistic and semantic patterns and reflects our best confidence at this time.",
+    "signals": { "llm_score": 0.2, "stylo_score": 0.3504, "formality_score": 0.1071 },
+    "status": "classified",
+    "appeal_url": "/appeal/9dd3c745-c2b4-40aa-b3cc-b769b9135507"
+}
+```
+
+### POST /appeal — submit, duplicate, not-found
+
+```
+POST /appeal/05379789-...  {"reasoning": "I wrote this myself for a business report..."}
+```
+```json
+{ "appeal_id": "26e7aa87-...", "content_id": "05379789-...", "status": "under_review",
+  "message": "Your appeal has been received and the content is now under review." }
+```
+```
+POST /appeal/05379789-...  (same appeal again)  →  HTTP 409
+{ "error": "appeal already submitted for this content" }
+
+POST /appeal/does-not-exist                     →  HTTP 404
+{ "error": "content_id not found" }
+```
+
+### GET /log — structured audit log with appeal visible
+
+```
+GET /log
+```
+```json
+{
+  "entries": [
+    {
+      "content_id": "05379789-...", "classification": "ai_generated",
+      "final_score": 0.8125, "timestamp": "2026-06-29T06:45:27Z",
+      "status": "under_review",
+      "appeal_reasoning": "I wrote this myself for a business report. The formal tone is intentional — it is a professional document, not AI output.",
+      "appeal_timestamp": "2026-06-29T06:47:33Z"
+    },
+    {
+      "content_id": "9dd3c745-...", "classification": "human",
+      "final_score": 0.2237, "timestamp": "2026-06-29T06:45:37Z",
+      "status": "classified", "appeal_reasoning": null
+    },
+    {
+      "content_id": "9de5f48a-...", "classification": "human",
+      "final_score": 0.2509, "timestamp": "2026-06-29T06:45:45Z",
+      "status": "classified", "appeal_reasoning": null
+    }
+  ],
+  "total": 4
+}
+```
+
+`GET /log?limit=2` returns at most 2 entries (`"total": 2`).
+
+### Rate limiting — 429 on the 5th request per minute
+
+```
+Request 1 → HTTP 200
+Request 2 → HTTP 200
+Request 3 → HTTP 200
+Request 4 → HTTP 200
+Request 5 → HTTP 429  ← rate limit hit
+Request 6 → HTTP 429
+
+Response body: 429 Too Many Requests — "5 per 1 minute"
 ```
 
 ---
